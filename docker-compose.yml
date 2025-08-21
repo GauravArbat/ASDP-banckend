@@ -1,0 +1,14 @@
+version: '3.9'
+services:
+  web:
+    build: .
+    image: sih-asdp:latest
+    ports:
+      - "8000:8000"
+    environment:
+      SECRET_KEY: "change-me"
+    volumes:
+      - ./uploads:/app/uploads
+    restart: unless-stopped
+
+

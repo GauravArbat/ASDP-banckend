@@ -1,0 +1,62 @@
+ASDP (AI Survey Data Processor) — Run Guide (Windows PowerShell)
+
+1) Create and activate a virtual environment
+py -m venv .venv
+.venv\Scripts\Activate.ps1
+
+2) Upgrade pip/build tools
+.venv\Scripts\python -m pip install --upgrade pip setuptools wheel
+
+3) Install core web dependencies (compatible with Python 3.13)
+.venv\Scripts\pip install \
+  flask==2.3.3 jinja2==3.1.2 werkzeug==2.3.7 \
+  flask-cors==4.0.0 flask-login==0.6.3 flask-sqlalchemy==3.1.1
+
+4) Install data/visualization/reporting libraries using wheels only
+# Avoids native build toolchain errors on Windows
+.venv\Scripts\pip install --only-binary=:all: numpy pandas openpyxl plotly reportlab
+
+# Optional (AI/outlier features). If wheels are unavailable on your Python, skip these:
+.venv\Scripts\pip install --only-binary=:all: scikit-learn scipy || echo "(Optional deps skipped)"
+
+5) Start the app
+.venv\Scripts\python run.py
+# Then open http://localhost:5000 in your browser
+
+6) Accounts
+# Default admin (created on first run):
+#   username: admin
+#   password: admin123
+# Auth pages:
+#   Login:     /login
+#   Register:  /register
+#   Admin:     /admin
+
+7) Quick tests from terminal
+# Upload a sample CSV
+curl.exe -F "file=@uploads/student_data.csv" http://localhost:5000/upload
+
+# Process data with mean imputation (PowerShell)
+$b='{"config":{"imputation":{"method":"mean"}}}'; \
+Invoke-WebRequest -Uri http://localhost:5000/clean -Method Post -ContentType 'application/json' -Body $b | Select-Object -ExpandProperty Content
+
+8) Stop the app
+# In the terminal where it’s running
+Ctrl+C
+
+9) Troubleshooting
+# If using Python 3.13 and a package tries to build from source (e.g., pandas):
+#   Re-run with wheel-only flag or install Python 3.12 LTS.
+.venv\Scripts\pip install --only-binary=:all: pandas numpy
+
+# Clear Python caches and restart
+Get-ChildItem -Recurse -Directory -Filter __pycache__ | Remove-Item -Recurse -Force
+Get-ChildItem -Recurse -Include *.pyc | Remove-Item -Force
+
+# If port 5000 is stuck, stop any python processes, then start again
+Get-Process python -ErrorAction SilentlyContinue | Stop-Process -Force
+.venv\Scripts\python run.py
+
+Notes
+- requirements.txt pins older versions; on Python 3.13 prefer the commands above.
+- If optional deps (scikit-learn/scipy) aren’t installed, the app falls back to simpler methods and logs it.

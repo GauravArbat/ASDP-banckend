@@ -193,18 +193,6 @@ def migrate_database():
         db.session.rollback()
         raise
 
-with app.app_context():
-    db.create_all()
-    migrate_database()
-    
-    # Seed default admin if none exists
-    if not User.query.filter_by(role='admin').first():
-        default_admin = User(username='admin', email=None, role='admin')
-        default_admin.set_password('admin123')
-        db.session.add(default_admin)
-        db.session.commit()
-        print('[INIT] Created default admin user: admin / admin123')
-
 class DataProcessor:
     def __init__(self):
         self.data = None
@@ -803,21 +791,71 @@ def api_auth_avatars(filename):
 
 @app.route('/')
 def index():
-    return jsonify({
-        'message': 'Welcome to the ASDP (AI Survey Data Processor) API',
-        'version': '1.0.0',
-        'endpoints': {
-            'auth': '/api/auth/*',
-            'data': '/upload, /clean, /report, /download_data',
-            'admin': '/admin, /admin/summary',
-            'profile': '/profile'
-        },
-        'status': 'running'
-    })
+    try:
+        # Basic health check - ensure database is accessible
+        db_status = "healthy"
+        try:
+            # Simple database connectivity test
+            db.session.execute("SELECT 1")
+        except Exception as e:
+            db_status = f"error: {str(e)}"
+        
+        return jsonify({
+            'message': 'Welcome to the ASDP (AI Survey Data Processor) API',
+            'version': '1.0.0',
+            'status': 'running',
+            'database': db_status,
+            'timestamp': datetime.utcnow().isoformat(),
+            'endpoints': {
+                'health': '/health',
+                'auth': '/api/auth/*',
+                'data': '/upload, /clean, /report, /download_data',
+                'admin': '/admin, /admin/summary',
+                'profile': '/profile'
+            }
+        })
+    except Exception as e:
+        return jsonify({
+            'error': 'Service error',
+            'message': str(e),
+            'status': 'error',
+            'timestamp': datetime.utcnow().isoformat()
+        }), 500
 
 @app.route('/health')
 def health_check():
-    return jsonify({'status': 'healthy', 'timestamp': datetime.utcnow().isoformat()})
+    try:
+        # Check database connectivity
+        db_status = "healthy"
+        try:
+            db.session.execute("SELECT 1")
+        except Exception as e:
+            db_status = f"error: {str(e)}"
+        
+        # Check upload directory
+        upload_status = "healthy"
+        try:
+            os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+            os.makedirs(app.config['AVATAR_FOLDER'], exist_ok=True)
+        except Exception as e:
+            upload_status = f"error: {str(e)}"
+        
+        return jsonify({
+            'status': 'healthy' if db_status == "healthy" and upload_status == "healthy" else 'degraded',
+            'timestamp': datetime.utcnow().isoformat(),
+            'checks': {
+                'database': db_status,
+                'upload_directory': upload_status
+            },
+            'version': '1.0.0',
+            'service': 'ASDP Backend API'
+        })
+    except Exception as e:
+        return jsonify({
+            'status': 'unhealthy',
+            'error': str(e),
+            'timestamp': datetime.utcnow().isoformat()
+        }), 500
 
 @app.route('/test-auth')
 def test_auth():
@@ -1317,9 +1355,77 @@ def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in {'csv', 'xlsx', 'xls'}
 
 # Initialize database
-with app.app_context():
-    db.create_all()
-    print("Database initialized successfully")
+def init_database():
+    """Initialize database and create admin user"""
+    max_retries = 3
+    retry_count = 0
+    
+    while retry_count < max_retries:
+        try:
+            with app.app_context():
+                db.create_all()
+                print("✅ Database initialized successfully")
+                
+                # Create admin user if none exists
+                try:
+                    admin_users = User.query.filter_by(role='admin').count()
+                    if admin_users == 0:
+                        # Create default admin user
+                        admin_username = "admin"
+                        admin_email = "admin@asdp.gov.in"
+                        admin_password = "admin123"  # Change this in production!
+                        
+                        # Check if admin user already exists
+                        existing_user = User.query.filter_by(username=admin_username).first()
+                        if not existing_user:
+                            admin_user = User(
+                                username=admin_username,
+                                email=admin_email,
+                                role='admin',
+                                created_at=datetime.utcnow()
+                            )
+                            admin_user.set_password(admin_password)
+                            db.session.add(admin_user)
+                            db.session.commit()
+                            print("✅ Admin user created successfully!")
+                            print(f"Username: {admin_username}")
+                            print(f"Password: {admin_password}")
+                            print("⚠️  IMPORTANT: Change the password after first login!")
+                        else:
+                            print("✅ Admin user already exists")
+                    else:
+                        print(f"✅ Found {admin_users} admin user(s)")
+                except Exception as e:
+                    print(f"⚠️  Warning: Could not create admin user: {str(e)}")
+                    # Don't fail the entire startup for admin user issues
+                
+                # Success - break out of retry loop
+                break
+                
+        except Exception as e:
+            retry_count += 1
+            print(f"❌ Error initializing database (attempt {retry_count}/{max_retries}): {str(e)}")
+            
+            if retry_count < max_retries:
+                print(f"🔄 Retrying in 2 seconds...")
+                import time
+                time.sleep(2)
+            else:
+                print(f"❌ Failed to initialize database after {max_retries} attempts")
+                print("⚠️  Application will continue but may not function properly")
+                # In production, we might want to exit here
+                # For now, let's continue and see if the app can run
+
+# Initialize database when app starts
+print("🚀 Starting ASDP Backend...")
+print(f"📁 Upload folder: {app.config['UPLOAD_FOLDER']}")
+print(f"🗄️  Database URI: {app.config['SQLALCHEMY_DATABASE_URI']}")
+print(f"🔑 Secret key configured: {'Yes' if app.config['SECRET_KEY'] != 'change-me' else 'No'}")
+
+init_database()
+
+print("✅ ASDP Backend initialization completed!")
+print("🌐 Application is ready to serve requests")
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)

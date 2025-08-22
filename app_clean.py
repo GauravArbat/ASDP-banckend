@@ -27,19 +27,24 @@ except Exception:
 
 # CORS for SPA development (React at :5173)
 try:
+    # CORS(
+    #     app,
+    #     supports_credentials=True,
+    #     resources={
+    #         r"/*": {
+    #             "origins": [
+    #                 "http://localhost:5173",
+    #                 "http://127.0.0.1:5173",
+    #                 "https://asdp-frontend.vercel.app",
+    #             ]
+    #         }
+    #     },
+    # )
     CORS(
-        app,
-        supports_credentials=True,
-        resources={
-            r"/*": {
-                "origins": [
-                    "http://localhost:5173",
-                    "http://127.0.0.1:5173",
-                    "https://asdp-frontend.vercel.app",
-                ]
-            }
-        },
-    )
+    app,
+    supports_credentials=True,
+    resources={r"/*": {"origins": r".*"}}
+)
 except Exception:
     # Fallback to permissive if flask_cors older version
     CORS(app)

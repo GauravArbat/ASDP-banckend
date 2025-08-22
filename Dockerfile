@@ -15,13 +15,19 @@ RUN python -m pip install --upgrade pip && \
 
 COPY . .
 
+# Create upload directories
 RUN mkdir -p uploads/avatars
 
+# Set environment variables
 ENV SECRET_KEY=change-me
+ENV UPLOAD_FOLDER=uploads
+ENV SQLALCHEMY_DATABASE_URI=sqlite:///app.db
 
 # Render provides PORT env var; default to 8000 for local
 ENV PORT=8000
 EXPOSE 8000
+
+# Start the application
 CMD ["sh", "-lc", "gunicorn -w 2 -k gthread -b 0.0.0.0:${PORT} app:app"]
 
 

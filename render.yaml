@@ -10,12 +10,10 @@ services:
       - key: SECRET_KEY
         generateValue: true
       - key: UPLOAD_FOLDER
-        value: /data/uploads
+        value: uploads
       - key: SQLALCHEMY_DATABASE_URI
-        value: sqlite:////data/app.db
+        value: sqlite:///app.db
+      - key: MAX_CONTENT_LENGTH
+        value: "16777216"
     healthCheckPath: /
-    disk:
-      name: data
-      mountPath: /data
-      sizeGB: 1
 

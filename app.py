@@ -1,6 +1,6 @@
 import os
 import json
-from flask import Flask, render_template, request, jsonify, send_file, redirect, url_for, send_from_directory
+from flask import Flask, request, jsonify, send_file, send_from_directory
 from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager, UserMixin, login_user, logout_user, current_user, login_required
@@ -38,6 +38,11 @@ app.config['AVATAR_FOLDER'] = os.path.join(app.config['UPLOAD_FOLDER'], 'avatars
 db = SQLAlchemy(app)
 login_manager = LoginManager(app)
 login_manager.login_view = 'login'
+
+# Configure login manager to handle unauthorized access
+@login_manager.unauthorized_handler
+def unauthorized():
+    return jsonify({'error': 'Authentication required'}), 401
 
 # Ensure upload directory exists
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
@@ -109,24 +114,89 @@ def admin_required(view_func):
     @wraps(view_func)
     def wrapped(*args, **kwargs):
         if not current_user.is_authenticated:
-            return login_manager.unauthorized()
+            return jsonify({'error': 'Authentication required'}), 401
         if getattr(current_user, 'role', 'user') != 'admin':
             return jsonify({'error': 'Admin access required'}), 403
         return view_func(*args, **kwargs)
     return wrapped
 
 
-with app.app_context():
-    db.create_all()
-    # Ensure avatar column exists when migrating from older DB
+def migrate_database():
+    """Migrate database schema to latest version"""
     try:
+        # Check and update user table
         result = db.session.execute(db.text("PRAGMA table_info(user)"))
         cols = [row[1] for row in result]
         if 'profile_image' not in cols:
             db.session.execute(db.text("ALTER TABLE user ADD COLUMN profile_image TEXT"))
-            db.session.commit()
-    except Exception:
+            print('[MIGRATION] Added profile_image column to user table')
+        
+        # Check and update report_record table
+        result = db.session.execute(db.text("PRAGMA table_info(report_record)"))
+        cols = [row[1] for row in result]
+        if 'dataset_id' not in cols:
+            db.session.execute(db.text("ALTER TABLE report_record ADD COLUMN dataset_id INTEGER"))
+            print('[MIGRATION] Added dataset_id column to report_record table')
+        if 'user_id' not in cols:
+            db.session.execute(db.text("ALTER TABLE report_record ADD COLUMN user_id INTEGER"))
+            print('[MIGRATION] Added user_id column to report_record table')
+        if 'format' not in cols:
+            db.session.execute(db.text("ALTER TABLE report_record ADD COLUMN format VARCHAR(10)"))
+            print('[MIGRATION] Added format column to report_record table')
+        if 'created_at' not in cols:
+            db.session.execute(db.text("ALTER TABLE report_record ADD COLUMN created_at DATETIME"))
+            print('[MIGRATION] Added created_at column to report_record table')
+        
+        # Check and update processing_run table
+        result = db.session.execute(db.text("PRAGMA table_info(processing_run)"))
+        cols = [row[1] for row in result]
+        if 'dataset_id' not in cols:
+            db.session.execute(db.text("ALTER TABLE processing_run ADD COLUMN dataset_id INTEGER"))
+            print('[MIGRATION] Added dataset_id column to processing_run table')
+        if 'user_id' not in cols:
+            db.session.execute(db.text("ALTER TABLE processing_run ADD COLUMN user_id INTEGER"))
+            print('[MIGRATION] Added user_id column to processing_run table')
+        if 'config' not in cols:
+            db.session.execute(db.text("ALTER TABLE processing_run ADD COLUMN config TEXT"))
+            print('[MIGRATION] Added config column to processing_run table')
+        if 'cleaning_log' not in cols:
+            db.session.execute(db.text("ALTER TABLE processing_run ADD COLUMN cleaning_log TEXT"))
+            print('[MIGRATION] Added cleaning_log column to processing_run table')
+        if 'estimates' not in cols:
+            db.session.execute(db.text("ALTER TABLE processing_run ADD COLUMN estimates TEXT"))
+            print('[MIGRATION] Added estimates column to processing_run table')
+        if 'plots_count' not in cols:
+            db.session.execute(db.text("ALTER TABLE processing_run ADD COLUMN plots_count INTEGER"))
+            print('[MIGRATION] Added plots_count column to processing_run table')
+        if 'success' not in cols:
+            db.session.execute(db.text("ALTER TABLE processing_run ADD COLUMN success BOOLEAN"))
+            print('[MIGRATION] Added success column to processing_run table')
+        if 'created_at' not in cols:
+            db.session.execute(db.text("ALTER TABLE processing_run ADD COLUMN created_at DATETIME"))
+            print('[MIGRATION] Added created_at column to processing_run table')
+        
+        # Check and update dataset table
+        result = db.session.execute(db.text("PRAGMA table_info(dataset)"))
+        cols = [row[1] for row in result]
+        if 'owner_id' not in cols:
+            db.session.execute(db.text("ALTER TABLE dataset ADD COLUMN owner_id INTEGER"))
+            print('[MIGRATION] Added owner_id column to dataset table')
+        if 'uploaded_at' not in cols:
+            db.session.execute(db.text("ALTER TABLE dataset ADD COLUMN uploaded_at DATETIME"))
+            print('[MIGRATION] Added uploaded_at column to dataset table')
+        
+        db.session.commit()
+        print('[MIGRATION] Database migration completed successfully')
+        
+    except Exception as e:
+        print(f'[MIGRATION] Error during migration: {e}')
         db.session.rollback()
+        raise
+
+with app.app_context():
+    db.create_all()
+    migrate_database()
+    
     # Seed default admin if none exists
     if not User.query.filter_by(role='admin').first():
         default_admin = User(username='admin', email=None, role='admin')
@@ -197,6 +267,11 @@ class DataProcessor:
                 # Non-fatal; proceed without coercion
                 pass
 
+            # Check if data is empty or has no columns
+            if self.data is None or len(self.data) == 0 or len(self.data.columns) == 0:
+                self.cleaning_log.append("Error: No data or columns found in file")
+                return False
+                
             self.cleaning_log.append(f"Data loaded successfully: {len(self.data)} rows, {len(self.data.columns)} columns")
             return True
         except Exception as e:
@@ -589,16 +664,181 @@ class DataProcessor:
 # Global processor instance
 processor = DataProcessor()
 
+# API Authentication endpoints
+@app.route('/api/auth/me', methods=['GET'])
+def api_auth_me():
+    if current_user.is_authenticated:
+        return jsonify({
+            'is_authenticated': True,
+            'user': {
+                'id': current_user.id,
+                'username': current_user.username,
+                'email': current_user.email,
+                'role': current_user.role,
+                'profile_image': current_user.profile_image
+            }
+        })
+    return jsonify({'is_authenticated': False, 'user': None})
+
+@app.route('/api/auth/login', methods=['POST'])
+def api_auth_login():
+    data = request.get_json()
+    if not data:
+        return jsonify({'error': 'No data provided'}), 400
+    
+    username = (data.get('username') or '').strip()
+    password = data.get('password') or ''
+    
+    if not username or not password:
+        return jsonify({'error': 'Username and password required'}), 400
+
+    user = User.query.filter_by(username=username).first()
+    if not user or not user.check_password(password):
+        return jsonify({'error': 'Invalid credentials'}), 401
+
+    login_user(user)
+    return jsonify({
+        'success': True,
+        'user': {
+            'id': user.id,
+            'username': user.username,
+            'email': user.email,
+            'role': user.role,
+            'profile_image': user.profile_image
+        }
+    })
+
+@app.route('/api/auth/register', methods=['POST'])
+def api_auth_register():
+    data = request.get_json()
+    if not data:
+        return jsonify({'error': 'No data provided'}), 400
+    
+    username = (data.get('username') or '').strip()
+    email = (data.get('email') or '').strip() or None
+    password = data.get('password') or ''
+    
+    if not username or not password:
+        return jsonify({'error': 'Username and password are required'}), 400
+    
+    if User.query.filter_by(username=username).first():
+        return jsonify({'error': 'Username already exists'}), 400
+
+    user = User(username=username, email=email, role='user')
+    user.set_password(password)
+    db.session.add(user)
+    db.session.commit()
+    login_user(user)
+    
+    return jsonify({
+        'success': True,
+        'user': {
+            'id': user.id,
+            'username': user.username,
+            'email': user.email,
+            'role': user.role,
+            'profile_image': user.profile_image
+        }
+    })
+
+@app.route('/api/auth/logout', methods=['POST'])
+def api_auth_logout():
+    if current_user.is_authenticated:
+        logout_user()
+    return jsonify({'success': True})
+
+@app.route('/api/auth/profile', methods=['GET', 'POST'])
+def api_auth_profile():
+    if not current_user.is_authenticated:
+        return jsonify({'error': 'Not authenticated'}), 401
+    
+    if request.method == 'GET':
+        return jsonify({
+            'user': {
+                'id': current_user.id,
+                'username': current_user.username,
+                'email': current_user.email,
+                'role': current_user.role,
+                'profile_image': current_user.profile_image
+            }
+        })
+    
+    # POST - update profile
+    data = request.get_json()
+    if not data:
+        return jsonify({'error': 'No data provided'}), 400
+    
+    if 'email' in data:
+        current_user.email = data['email'].strip() or None
+    
+    db.session.commit()
+    return jsonify({'success': True})
+
+@app.route('/api/auth/avatar', methods=['POST'])
+def api_auth_avatar():
+    if not current_user.is_authenticated:
+        return jsonify({'error': 'Not authenticated'}), 401
+    
+    if 'avatar' not in request.files:
+        return jsonify({'error': 'No file provided'}), 400
+    
+    file = request.files['avatar']
+    if file.filename == '':
+        return jsonify({'error': 'No file selected'}), 400
+    
+    if file:
+        filename = secure_filename(f"{current_user.id}_{file.filename}")
+        filepath = os.path.join(app.config['AVATAR_FOLDER'], filename)
+        file.save(filepath)
+        
+        # Update user profile
+        current_user.profile_image = f"/avatars/{filename}"
+        db.session.commit()
+        
+        return jsonify({'success': True, 'profile_image': current_user.profile_image})
+
+@app.route('/api/auth/avatars/<path:filename>')
+def api_auth_avatars(filename):
+    return send_from_directory(app.config['AVATAR_FOLDER'], filename)
+
 @app.route('/')
 def index():
-    return render_template('index.html')
+    return jsonify({
+        'message': 'Welcome to the ASDP (AI Survey Data Processor) API',
+        'version': '1.0.0',
+        'endpoints': {
+            'auth': '/api/auth/*',
+            'data': '/upload, /clean, /report, /download_data',
+            'admin': '/admin, /admin/summary',
+            'profile': '/profile'
+        },
+        'status': 'running'
+    })
+
+@app.route('/health')
+def health_check():
+    return jsonify({'status': 'healthy', 'timestamp': datetime.utcnow().isoformat()})
+
+@app.route('/test-auth')
+def test_auth():
+    if current_user.is_authenticated:
+        return jsonify({
+            'authenticated': True,
+            'user': {
+                'id': current_user.id,
+                'username': current_user.username,
+                'role': current_user.role
+            }
+        })
+    else:
+        return jsonify({'authenticated': False})
 
 
 # Authentication pages and handlers
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'GET':
-        return render_template('login.html')
+        return jsonify({'message': 'Login page not available via this endpoint. Use /api/auth/login for JSON.'})
 
     # Support form submit or JSON
     data = request.json if request.is_json else request.form
@@ -607,25 +847,24 @@ def login():
     if not username or not password:
         if request.is_json:
             return jsonify({'error': 'Username and password required'}), 400
-        return render_template('login.html', error='Username and password required'), 400
+        return jsonify({'message': 'Username and password required'}), 400
 
     user = User.query.filter_by(username=username).first()
     if not user or not user.check_password(password):
         if request.is_json:
             return jsonify({'error': 'Invalid credentials'}), 401
-        return render_template('login.html', error='Invalid credentials'), 401
+        return jsonify({'message': 'Invalid credentials'}), 401
 
     login_user(user)
     if request.is_json:
         return jsonify({'success': True, 'user': {'username': user.username, 'role': user.role}})
-    next_url = request.args.get('next') or url_for('index')
-    return redirect(next_url)
+    return jsonify({'message': 'Login successful. Use /api/auth/me to check authentication.'})
 
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():
     if request.method == 'GET':
-        return render_template('register.html')
+        return jsonify({'message': 'Register page not available via this endpoint. Use /api/auth/register for JSON.'})
 
     data = request.json if request.is_json else request.form
     username = (data.get('username') or '').strip()
@@ -634,18 +873,18 @@ def register():
     confirm = data.get('confirm') or ''
 
     if not username or not password:
-        return render_template('register.html', error='Username and password are required'), 400
+        return jsonify({'message': 'Username and password are required'}), 400
     if password != confirm:
-        return render_template('register.html', error='Passwords do not match'), 400
+        return jsonify({'message': 'Passwords do not match'}), 400
     if User.query.filter_by(username=username).first():
-        return render_template('register.html', error='Username already exists'), 400
+        return jsonify({'message': 'Username already exists'}), 400
 
     user = User(username=username, email=email, role='user')
     user.set_password(password)
     db.session.add(user)
     db.session.commit()
     login_user(user)
-    return redirect(url_for('index'))
+    return jsonify({'message': 'Registration successful. Use /api/auth/me to check authentication.'})
 
 
 @app.route('/logout', methods=['GET', 'POST'])
@@ -654,7 +893,7 @@ def logout():
         logout_user()
     if request.method == 'POST' and request.is_json:
         return jsonify({'success': True})
-    return redirect(url_for('login'))
+    return jsonify({'message': 'Logout successful.'})
 
 
 # Deprecated duplicate JSON-only login/logout removed (handled above by GET/POST routes)
@@ -689,30 +928,150 @@ def admin_summary():
 @login_required
 @admin_required
 def admin_page():
-    users_count = User.query.count()
-    datasets_count = Dataset.query.count()
-    runs_count = ProcessingRun.query.count()
-    reports_count = ReportRecord.query.count()
-    latest_datasets = Dataset.query.order_by(Dataset.uploaded_at.desc()).limit(10).all()
-    latest_runs = ProcessingRun.query.order_by(ProcessingRun.created_at.desc()).limit(10).all()
-    all_users = User.query.order_by(User.created_at.desc()).all()
-    return render_template(
-        'admin.html',
-        users=users_count,
-        datasets=datasets_count,
-        runs=runs_count,
-        reports=reports_count,
-        latest=latest_datasets,
-        recent_runs=latest_runs,
-        all_users=all_users
-    )
+    try:
+        users_count = User.query.count()
+        datasets_count = Dataset.query.count()
+        runs_count = ProcessingRun.query.count()
+        reports_count = ReportRecord.query.count()
+        latest_datasets = Dataset.query.order_by(Dataset.uploaded_at.desc()).limit(10).all()
+        latest_runs = ProcessingRun.query.order_by(ProcessingRun.created_at.desc()).limit(10).all()
+        all_users = User.query.order_by(User.created_at.desc()).all()
+        
+        return jsonify({
+            'users': users_count,
+            'datasets': datasets_count,
+            'runs': runs_count,
+            'reports': reports_count,
+            'latest_datasets': [
+                {
+                    'id': d.id,
+                    'filename': d.filename,
+                    'rows': d.rows,
+                    'columns': d.columns,
+                    'owner': (d.owner.username if d.owner else None),
+                    'uploaded_at': d.uploaded_at.isoformat()
+                }
+                for d in latest_datasets
+            ],
+            'recent_runs': [
+                {
+                    'id': r.id,
+                    'dataset_id': r.dataset_id,
+                    'user_id': r.user_id,
+                    'config': r.config,
+                    'cleaning_log': r.cleaning_log,
+                    'estimates': r.estimates,
+                    'plots_count': r.plots_count,
+                    'success': r.success,
+                    'created_at': r.created_at.isoformat()
+                }
+                for r in latest_runs
+            ],
+            'all_users': [
+                {
+                    'id': u.id,
+                    'username': u.username,
+                    'email': u.email,
+                    'role': u.role,
+                    'created_at': u.created_at.isoformat()
+                }
+                for u in all_users
+            ]
+        })
+    except Exception as e:
+        print(f"Admin dashboard error: {e}")
+        return jsonify({'error': f'Failed to load admin dashboard: {str(e)}'}), 500
+
+@app.route('/admin/user/<int:user_id>/role', methods=['POST'])
+@login_required
+@admin_required
+def update_user_role(user_id):
+    data = request.json
+    role = data.get('role')
+    if role not in ['user', 'admin']:
+        return jsonify({'error': 'Invalid role'}), 400
+    target = User.query.get(user_id)
+    if not target:
+        return jsonify({'error': 'User not found'}), 404
+    target.role = role
+    db.session.commit()
+    if request.is_json:
+        return jsonify({'success': True})
+    # Redirect back to admin dashboard after update
+    return jsonify({'message': 'Role updated successfully.'})
+
+@app.route('/api/admin/dashboard')
+@login_required
+@admin_required
+def api_admin_dashboard():
+    try:
+        users_count = User.query.count()
+        datasets_count = Dataset.query.count()
+        runs_count = ProcessingRun.query.count()
+        reports_count = ReportRecord.query.count()
+        latest_datasets = Dataset.query.order_by(Dataset.uploaded_at.desc()).limit(10).all()
+        latest_runs = ProcessingRun.query.order_by(ProcessingRun.created_at.desc()).limit(10).all()
+        all_users = User.query.order_by(User.created_at.desc()).all()
+        
+        return jsonify({
+            'users': users_count,
+            'datasets': datasets_count,
+            'runs': runs_count,
+            'reports': reports_count,
+            'latest_datasets': [
+                {
+                    'id': d.id,
+                    'filename': d.filename,
+                    'rows': d.rows,
+                    'columns': d.columns,
+                    'owner': (d.owner.username if d.owner else None),
+                    'uploaded_at': d.uploaded_at.isoformat()
+                }
+                for d in latest_datasets
+            ],
+            'recent_runs': [
+                {
+                    'id': r.id,
+                    'dataset_id': r.dataset_id,
+                    'user_id': r.user_id,
+                    'config': r.config,
+                    'cleaning_log': r.cleaning_log,
+                    'estimates': r.estimates,
+                    'plots_count': r.plots_count,
+                    'success': r.success,
+                    'created_at': r.created_at.isoformat()
+                }
+                for r in latest_runs
+            ],
+            'all_users': [
+                {
+                    'id': u.id,
+                    'username': u.username,
+                    'email': u.email,
+                    'role': u.role,
+                    'created_at': u.created_at.isoformat()
+                }
+                for u in all_users
+            ]
+        })
+    except Exception as e:
+        print(f"API Admin dashboard error: {e}")
+        return jsonify({'error': f'Failed to load admin dashboard: {str(e)}'}), 500
 
 
 @app.route('/profile', methods=['GET', 'POST'])
 @login_required
 def profile():
     if request.method == 'GET':
-        return render_template('profile.html', user=current_user)
+        return jsonify({
+            'user': {
+                'id': current_user.id,
+                'username': current_user.username,
+                'email': current_user.email,
+                'role': current_user.role,
+                'profile_image': current_user.profile_image
+            }
+        })
     # POST: update username/email and optionally password
     data = request.form
     new_username = (data.get('username') or '').strip()
@@ -729,16 +1088,16 @@ def profile():
 
     if new_username and new_username != current_user.username:
         if User.query.filter(User.username == new_username, User.id != current_user.id).first():
-            return render_template('profile.html', user=current_user, error='Username already taken')
+            return jsonify({'error': 'Username already taken'}), 400
         current_user.username = new_username
     if new_email and new_email != current_user.email:
         if User.query.filter(User.email == new_email, User.id != current_user.id).first():
-            return render_template('profile.html', user=current_user, error='Email already in use')
+            return jsonify({'error': 'Email already in use'}), 400
         current_user.email = new_email
     if new_password:
         current_user.set_password(new_password)
     db.session.commit()
-    return render_template('profile.html', user=current_user, success='Profile updated')
+    return jsonify({'message': 'Profile updated successfully.'})
 
 
 @app.route('/avatars/<path:filename>')
@@ -766,7 +1125,7 @@ def admin_update_role(user_id: int):
     if request.is_json:
         return jsonify({'success': True})
     # Redirect back to admin dashboard after update
-    return redirect(url_for('admin_page'))
+    return jsonify({'message': 'Role updated successfully.'})
 
 @app.route('/upload', methods=['POST'])
 def upload_file():
@@ -787,6 +1146,7 @@ def upload_file():
             # Get initial data summary (guard against unexpected errors)
             try:
                 # Track dataset in DB (if DB is initialized)
+                ds = None
                 try:
                     rows_count = len(processor.data)
                     cols_count = len(processor.data.columns)
@@ -799,10 +1159,12 @@ def upload_file():
                     )
                     db.session.add(ds)
                     db.session.commit()
-                except Exception:
+                except Exception as e:
                     db.session.rollback()
-                    # Non-fatal: continue without recording
-                    pass
+                    print(f"Warning: Failed to save dataset to database: {e}")
+                    # Continue without database tracking
+                    ds = None
+                
                 summary = {
                     'rows': len(processor.data),
                     'columns': len(processor.data.columns),
@@ -810,7 +1172,12 @@ def upload_file():
                     'data_types': processor.data.dtypes.astype(str).to_dict(),
                     'missing_values': processor.detect_missing_values()
                 }
-                return jsonify({'success': True, 'summary': summary})
+                
+                response_data = {'success': True, 'summary': summary}
+                if ds:
+                    response_data['dataset'] = {'id': ds.id}
+                
+                return jsonify(response_data)
             except Exception as e:
                 return jsonify({'error': f'Failed to summarize data: {str(e)}'}), 400
         else:
@@ -822,6 +1189,10 @@ def upload_file():
 def clean_data():
     data = request.json
     cleaning_config = data.get('config', {})
+    
+    # Check if data is available
+    if processor.data is None or len(processor.data) == 0 or len(processor.data.columns) == 0:
+        return jsonify({'error': 'No data available for cleaning. Please upload a file first.'}), 400
     
     try:
         # Missing value imputation
@@ -879,7 +1250,10 @@ def clean_data():
         })
     
     except Exception as e:
-        return jsonify({'error': str(e)}), 400
+        # Log the error for debugging
+        error_msg = f"Error cleaning data: {str(e)}"
+        print(f"Clean endpoint error: {error_msg}")
+        return jsonify({'error': error_msg}), 400
 
 @app.route('/report', methods=['POST'])
 def generate_report():
@@ -941,6 +1315,11 @@ def download_processed_data():
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in {'csv', 'xlsx', 'xls'}
+
+# Initialize database
+with app.app_context():
+    db.create_all()
+    print("Database initialized successfully")
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)

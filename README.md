@@ -1,10 +1,18 @@
-# ASDP (AI Survey Data Processor) Application
+# ASDP (AI Survey Data Processor) Backend API
 
 ## Ministry of Statistics and Programme Implementation (MoSPI)
 
 ### Overview
 
-This AI-enhanced application is designed to streamline survey data processing and analysis for official statistical agencies. It provides automated, low-code tools to accelerate data readiness and ensure methodological consistency, resulting in substantial time and resource savings.
+This is a clean, API-only backend for the ASDP (AI Survey Data Processor) application. It provides automated, low-code tools to accelerate data readiness and ensure methodological consistency for official statistical agencies. The backend is designed to work with a separate frontend application.
+
+### Architecture
+
+- **API-First Design**: Clean REST API with JSON responses
+- **No Frontend Templates**: Pure backend service
+- **CORS Enabled**: Configured for frontend integration
+- **Authentication**: Session-based authentication with Flask-Login
+- **Database**: SQLAlchemy with SQLite (configurable for PostgreSQL)
 
 ### Key Features
 
@@ -55,7 +63,7 @@ This AI-enhanced application is designed to streamline survey data processing an
 1. **Clone or download the project**
    ```bash
    git clone <repository-url>
-   cd SIH
+   cd backend
    ```
 
 2. **Install dependencies**
@@ -63,15 +71,32 @@ This AI-enhanced application is designed to streamline survey data processing an
    pip install -r requirements.txt
    ```
 
-3. **Run the application**
+3. **Run the API server**
    ```bash
    python app.py
    ```
 
-4. **Access the application**
-   - Open your web browser
-   - Navigate to `http://localhost:5000`
-   - The application will be ready to use
+4. **Access the API**
+   - Backend API runs on `http://localhost:5000`
+   - API documentation available at `http://localhost:5000/`
+
+### Frontend Integration
+
+The backend is designed to work with a separate frontend application. The API endpoints are:
+
+- **Authentication**: `/api/auth/*`
+- **Admin**: `/api/admin/*`
+- **Data Processing**: `/api/data/*`
+
+For detailed API documentation, see `API_DOCUMENTATION.md`.
+
+### CORS Configuration
+
+The backend is configured to accept requests from:
+- `http://localhost:5173` (React development server)
+- `http://127.0.0.1:5173`
+
+Authentication uses cookies with CORS credentials enabled.
 
 ### Deploy to Render
 

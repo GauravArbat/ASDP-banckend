@@ -24,7 +24,7 @@ try:
     app.config['MAX_CONTENT_LENGTH'] = int(os.environ.get('MAX_CONTENT_LENGTH', 16 * 1024 * 1024))
 except Exception:
     app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
-CORS(app)
+CORS(app, resources={r"/api/*": {"origins": "https://asdp-frontend.vercel.app"}})
 
 # Database and authentication setup
 # Prefer DATABASE_URL/SQLALCHEMY_DATABASE_URI from environment for portability

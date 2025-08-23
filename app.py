@@ -21,13 +21,19 @@ app = Flask(__name__)
 # Configure via environment when available (for Render/Docker)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'change-me')
 app.config['UPLOAD_FOLDER'] = os.environ.get('UPLOAD_FOLDER', 'uploads')
+app.config['SESSION_COOKIE_SECURE'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = 'None'
+app.config['SESSION_COOKIE_HTTPONLY'] = False
 try:
     app.config['MAX_CONTENT_LENGTH'] = int(os.environ.get('MAX_CONTENT_LENGTH', 16 * 1024 * 1024))
 except Exception:
     app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
+
 CORS(app, 
      origins=["https://asdp-frontend.vercel.app"],
-     supports_credentials=True)
+     supports_credentials=True,
+     allow_headers=["Content-Type", "Authorization"],
+     methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"])
 
 # Database and authentication setup
 # Prefer DATABASE_URL/SQLALCHEMY_DATABASE_URI from environment for portability
@@ -671,8 +677,16 @@ def api_auth_me():
         })
     return jsonify({'is_authenticated': False, 'user': None})
 
-@app.route('/api/auth/login', methods=['POST'])
+@app.route('/api/auth/login', methods=['POST', 'OPTIONS'])
 def api_auth_login():
+    if request.method == 'OPTIONS':
+        response = jsonify({'status': 'ok'})
+        response.headers['Access-Control-Allow-Origin'] = 'https://asdp-frontend.vercel.app'
+        response.headers['Access-Control-Allow-Credentials'] = 'true'
+        response.headers['Access-Control-Allow-Methods'] = 'POST, OPTIONS'
+        response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+        return response
+    
     data = request.get_json()
     if not data:
         return jsonify({'error': 'No data provided'}), 400
@@ -699,8 +713,16 @@ def api_auth_login():
         }
     })
 
-@app.route('/api/auth/register', methods=['POST'])
+@app.route('/api/auth/register', methods=['POST', 'OPTIONS'])
 def api_auth_register():
+    if request.method == 'OPTIONS':
+        response = jsonify({'status': 'ok'})
+        response.headers['Access-Control-Allow-Origin'] = 'https://asdp-frontend.vercel.app'
+        response.headers['Access-Control-Allow-Credentials'] = 'true'
+        response.headers['Access-Control-Allow-Methods'] = 'POST, OPTIONS'
+        response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+        return response
+    
     data = request.get_json()
     if not data:
         return jsonify({'error': 'No data provided'}), 400
@@ -1168,8 +1190,16 @@ def admin_update_role(user_id: int):
     # Redirect back to admin dashboard after update
     return jsonify({'message': 'Role updated successfully.'})
 
-@app.route('/upload', methods=['POST'])
+@app.route('/upload', methods=['POST', 'OPTIONS'])
 def upload_file():
+    if request.method == 'OPTIONS':
+        response = jsonify({'status': 'ok'})
+        response.headers['Access-Control-Allow-Origin'] = 'https://asdp-frontend.vercel.app'
+        response.headers['Access-Control-Allow-Credentials'] = 'true'
+        response.headers['Access-Control-Allow-Methods'] = 'POST, OPTIONS'
+        response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+        return response
+    
     if 'file' not in request.files:
         return jsonify({'error': 'No file provided'}), 400
     
@@ -1226,8 +1256,16 @@ def upload_file():
     
     return jsonify({'error': 'Invalid file type'}), 400
 
-@app.route('/clean', methods=['POST'])
+@app.route('/clean', methods=['POST', 'OPTIONS'])
 def clean_data():
+    if request.method == 'OPTIONS':
+        response = jsonify({'status': 'ok'})
+        response.headers['Access-Control-Allow-Origin'] = 'https://asdp-frontend.vercel.app'
+        response.headers['Access-Control-Allow-Credentials'] = 'true'
+        response.headers['Access-Control-Allow-Methods'] = 'POST, OPTIONS'
+        response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+        return response
+    
     data = request.json
     cleaning_config = data.get('config', {})
     
@@ -1296,27 +1334,69 @@ def clean_data():
         print(f"Clean endpoint error: {error_msg}")
         return jsonify({'error': error_msg}), 400
 
-@app.route('/report', methods=['POST'])
+@app.route('/report', methods=['POST', 'OPTIONS'])
 def generate_report():
+    if request.method == 'OPTIONS':
+        response = jsonify({'status': 'ok'})
+        response.headers['Access-Control-Allow-Origin'] = 'https://asdp-frontend.vercel.app'
+        response.headers['Access-Control-Allow-Credentials'] = 'true'
+        response.headers['Access-Control-Allow-Methods'] = 'POST, OPTIONS'
+        response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+        return response
+    
     data = request.json
     report_format = data.get('format', 'pdf')
+    dataset_id = data.get('dataset_id')
     
     try:
+        # Check if processor has data loaded
+        if processor.data is None:
+            # Try to load data from the most recent dataset
+            try:
+                ds = Dataset.query.order_by(Dataset.uploaded_at.desc()).first()
+                if ds and ds.file_path and os.path.exists(ds.file_path):
+                    if processor.load_data(ds.file_path):
+                        print(f"Loaded data from {ds.file_path}")
+                    else:
+                        return jsonify({'error': 'Failed to load data for report generation'}), 400
+                else:
+                    return jsonify({'error': 'No data available for report generation. Please upload a file first.'}), 400
+            except Exception as e:
+                print(f"Error loading data for report: {e}")
+                return jsonify({'error': 'Failed to load data for report generation'}), 400
+        
+        # Generate the report
         report_content = processor.generate_report(format=report_format)
         
         if report_format == 'pdf':
             # Ensure a valid PDF bytes response
-            pdf_bytes = report_content.getvalue() if hasattr(report_content, 'getvalue') else bytes(report_content)
-            return send_file(
+            if hasattr(report_content, 'getvalue'):
+                pdf_bytes = report_content.getvalue()
+            elif isinstance(report_content, bytes):
+                pdf_bytes = report_content
+            else:
+                pdf_bytes = bytes(report_content)
+            
+            # Create response with proper headers
+            response = send_file(
                 io.BytesIO(pdf_bytes),
                 mimetype='application/pdf',
                 as_attachment=True,
                 download_name=f'survey_report_{datetime.now().strftime("%Y%m%d_%H%M%S")}.pdf'
             )
+            
+            # Add CORS headers for PDF download
+            response.headers['Access-Control-Allow-Origin'] = 'https://asdp-frontend.vercel.app'
+            response.headers['Access-Control-Allow-Credentials'] = 'true'
+            response.headers['Access-Control-Allow-Methods'] = 'POST, OPTIONS'
+            response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+            
+            return response
         else:
             return jsonify({'html_content': report_content})
     
     except Exception as e:
+        print(f"Report generation error: {str(e)}")
         return jsonify({'error': str(e)}), 400
 
     finally:
@@ -1334,24 +1414,55 @@ def generate_report():
             db.session.rollback()
             pass
 
-@app.route('/download_data', methods=['POST'])
+@app.route('/download_data', methods=['POST', 'OPTIONS'])
 def download_processed_data():
+    if request.method == 'OPTIONS':
+        response = jsonify({'status': 'ok'})
+        response.headers['Access-Control-Allow-Origin'] = 'https://asdp-frontend.vercel.app'
+        response.headers['Access-Control-Allow-Credentials'] = 'true'
+        response.headers['Access-Control-Allow-Methods'] = 'POST, OPTIONS'
+        response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+        return response
+    
     try:
-        if processor.data is not None:
-            # Stream CSV from memory to avoid leaving temp files on disk
-            csv_buffer = io.StringIO()
-            processor.data.to_csv(csv_buffer, index=False)
-            csv_buffer.seek(0)
-            return send_file(
-                io.BytesIO(csv_buffer.getvalue().encode('utf-8')),
-                mimetype='text/csv',
-                as_attachment=True,
-                download_name=f'processed_data_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv'
-            )
-        else:
-            return jsonify({'error': 'No data available'}), 400
+        # Check if processor has data loaded
+        if processor.data is None:
+            # Try to load data from the most recent dataset
+            try:
+                ds = Dataset.query.order_by(Dataset.uploaded_at.desc()).first()
+                if ds and ds.file_path and os.path.exists(ds.file_path):
+                    if processor.load_data(ds.file_path):
+                        print(f"Loaded data from {ds.file_path} for download")
+                    else:
+                        return jsonify({'error': 'Failed to load data for download'}), 400
+                else:
+                    return jsonify({'error': 'No data available for download. Please upload a file first.'}), 400
+            except Exception as e:
+                print(f"Error loading data for download: {e}")
+                return jsonify({'error': 'Failed to load data for download'}), 400
+        
+        # Stream CSV from memory to avoid leaving temp files on disk
+        csv_buffer = io.StringIO()
+        processor.data.to_csv(csv_buffer, index=False)
+        csv_buffer.seek(0)
+        
+        response = send_file(
+            io.BytesIO(csv_buffer.getvalue().encode('utf-8')),
+            mimetype='text/csv',
+            as_attachment=True,
+            download_name=f'processed_data_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv'
+        )
+        
+        # Add CORS headers for CSV download
+        response.headers['Access-Control-Allow-Origin'] = 'https://asdp-frontend.vercel.app'
+        response.headers['Access-Control-Allow-Credentials'] = 'true'
+        response.headers['Access-Control-Allow-Methods'] = 'POST, OPTIONS'
+        response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+        
+        return response
     
     except Exception as e:
+        print(f"Download error: {str(e)}")
         return jsonify({'error': str(e)}), 400
 
 def allowed_file(filename):

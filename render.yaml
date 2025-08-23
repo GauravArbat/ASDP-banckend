@@ -15,5 +15,9 @@ services:
         value: sqlite:///app.db
       - key: MAX_CONTENT_LENGTH
         value: "16777216"
-    healthCheckPath: /
+      - key: FLASK_ENV
+        value: production
+    healthCheckPath: /health
+    buildCommand: echo "Using Dockerfile"
+    startCommand: gunicorn -w 2 -k gthread -b 0.0.0.0:$PORT --timeout 120 app:app
 

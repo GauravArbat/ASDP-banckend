@@ -3,7 +3,7 @@ jinja2==3.1.2
 werkzeug==2.3.7
 flask-cors==4.0.0
 
-# Data & Viz (compatible with Python 3.13 via wheels)
+# Data & Viz (compatible with Python 3.12)
 numpy>=2.0.0
 pandas>=2.3.1
 openpyxl>=3.1.2
@@ -23,6 +23,3 @@ flask-sqlalchemy==3.1.1
 # Misc
 python-dotenv>=1.0.0
 gunicorn>=21.2.0
-# dash and dbc are not used by the app; install if you need them
-# dash>=2.14.1
-# dash-bootstrap-components>=1.5.0

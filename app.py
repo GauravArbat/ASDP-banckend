@@ -14,6 +14,7 @@ from werkzeug.utils import secure_filename
 import tempfile
 import warnings
 import math
+from sqlalchemy import text
 warnings.filterwarnings('ignore')
 
 app = Flask(__name__)
@@ -24,7 +25,9 @@ try:
     app.config['MAX_CONTENT_LENGTH'] = int(os.environ.get('MAX_CONTENT_LENGTH', 16 * 1024 * 1024))
 except Exception:
     app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
-CORS(app, resources={r"/api/*": {"origins": "https://asdp-frontend.vercel.app"}})
+CORS(app, 
+     resources={r"/api/*": {"origins": "https://asdp-frontend.vercel.app"}},
+     supports_credentials=True)
 
 # Database and authentication setup
 # Prefer DATABASE_URL/SQLALCHEMY_DATABASE_URI from environment for portability
@@ -796,7 +799,7 @@ def index():
         db_status = "healthy"
         try:
             # Simple database connectivity test
-            db.session.execute("SELECT 1")
+            db.session.execute(text("SELECT 1"))
         except Exception as e:
             db_status = f"error: {str(e)}"
         
@@ -828,7 +831,7 @@ def health_check():
         # Check database connectivity
         db_status = "healthy"
         try:
-            db.session.execute("SELECT 1")
+            db.session.execute(text("SELECT 1"))
         except Exception as e:
             db_status = f"error: {str(e)}"
         

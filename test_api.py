@@ -1,86 +1,66 @@
 #!/usr/bin/env python3
 """
-Simple test script to verify API endpoints are working
+API endpoint test script
 """
-
 import requests
 import json
 
-BASE_URL = "http://localhost:5000"
+BASE_URL = "https://asdp-banckend.onrender.com"
 
-def test_root():
-    """Test the root endpoint"""
+def test_endpoint(endpoint, method="GET", data=None, headers=None):
+    """Test an API endpoint"""
+    url = f"{BASE_URL}{endpoint}"
+    
+    if headers is None:
+        headers = {}
+    
     try:
-        response = requests.get(f"{BASE_URL}/")
-        print(f"✅ Root endpoint: {response.status_code}")
+        if method == "GET":
+            response = requests.get(url, headers=headers)
+        elif method == "POST":
+            response = requests.post(url, json=data, headers=headers)
+        else:
+            print(f"❌ Unsupported method: {method}")
+            return False
+        
+        print(f"🔍 Testing {method} {endpoint}")
+        print(f"   Status: {response.status_code}")
+        
         if response.status_code == 200:
-            data = response.json()
-            print(f"   Message: {data.get('message', 'N/A')}")
-        return True
+            print("   ✅ Success")
+            if response.headers.get('content-type', '').startswith('application/json'):
+                try:
+                    data = response.json()
+                    print(f"   Response: {json.dumps(data, indent=2)[:200]}...")
+                except:
+                    print(f"   Response: {response.text[:200]}...")
+        else:
+            print(f"   ❌ Failed: {response.text[:200]}...")
+        
+        return response.status_code == 200
+        
     except Exception as e:
-        print(f"❌ Root endpoint failed: {e}")
+        print(f"   ❌ Error: {e}")
         return False
 
-def test_api_docs():
-    """Test the API documentation endpoint"""
-    try:
-        response = requests.get(f"{BASE_URL}/")
-        print(f"✅ API docs endpoint: {response.status_code}")
-        if response.status_code == 200:
-            data = response.json()
-            if 'endpoints' in data:
-                print(f"   Available endpoints: {list(data['endpoints'].keys())}")
-        return True
-    except Exception as e:
-        print(f"❌ API docs endpoint failed: {e}")
-        return False
-
-def test_legacy_routes():
-    """Test legacy route compatibility"""
-    legacy_routes = [
-        "/me",
-        "/login", 
-        "/register",
-        "/logout",
-        "/profile",
-        "/admin",
-        "/admin/summary"
-    ]
-    
-    for route in legacy_routes:
-        try:
-            response = requests.get(f"{BASE_URL}{route}")
-            print(f"✅ Legacy {route}: {response.status_code}")
-        except Exception as e:
-            print(f"❌ Legacy {route} failed: {e}")
-
-def test_api_routes():
-    """Test new API routes"""
-    api_routes = [
-        "/api/auth/me",
-        "/api/admin/dashboard",
-    ]
-    
-    for route in api_routes:
-        try:
-            response = requests.get(f"{BASE_URL}{route}")
-            print(f"✅ API {route}: {response.status_code}")
-        except Exception as e:
-            print(f"❌ API {route} failed: {e}")
-
-if __name__ == "__main__":
-    print("🧪 Testing ASDP Backend API...")
-    print("=" * 50)
+def main():
+    """Test all API endpoints"""
+    print("🧪 Testing ASDP API Endpoints\n")
     
     # Test basic endpoints
-    test_root()
-    test_api_docs()
+    test_endpoint("/")
+    test_endpoint("/health")
     
-    print("\n🔗 Testing Legacy Routes (for backward compatibility):")
-    test_legacy_routes()
+    # Test auth endpoints (without credentials)
+    test_endpoint("/api/auth/me")
     
-    print("\n🔗 Testing New API Routes:")
-    test_api_routes()
+    # Test admin endpoint (should fail without auth)
+    test_endpoint("/api/admin/dashboard")
     
-    print("\n✅ API testing completed!")
-    print("\nTo start the server, run: python app.py")
+    # Test data endpoints (should fail without auth)
+    test_endpoint("/upload", method="POST", data={"test": "data"})
+    
+    print("\n✅ API testing completed")
+
+if __name__ == "__main__":
+    main()

@@ -26,7 +26,7 @@ try:
 except Exception:
     app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
 CORS(app, 
-     resources={r"/api/*": {"origins": "https://asdp-frontend.vercel.app"}},
+     origins=["https://asdp-frontend.vercel.app"],
      supports_credentials=True)
 
 # Database and authentication setup

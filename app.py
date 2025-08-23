@@ -29,11 +29,28 @@ try:
 except Exception:
     app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
 
+# Get CORS origins from environment or use defaults
+CORS_ORIGINS = os.environ.get('CORS_ORIGINS', 'https://asdp-frontend.vercel.app,http://localhost:5173,http://127.0.0.1:5173')
+CORS_ORIGINS_LIST = [origin.strip() for origin in CORS_ORIGINS.split(',')]
+
 CORS(app, 
-     origins=["https://asdp-frontend.vercel.app"],
+     origins=CORS_ORIGINS_LIST,
      supports_credentials=True,
      allow_headers=["Content-Type", "Authorization"],
      methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"])
+
+# Helper function to set CORS headers
+def set_cors_headers(response):
+    """Set CORS headers based on the request origin"""
+    origin = request.headers.get('Origin')
+    if origin in CORS_ORIGINS_LIST:
+        response.headers['Access-Control-Allow-Origin'] = origin
+    else:
+        response.headers['Access-Control-Allow-Origin'] = 'https://asdp-frontend.vercel.app'
+    response.headers['Access-Control-Allow-Credentials'] = 'true'
+    response.headers['Access-Control-Allow-Methods'] = 'POST, OPTIONS'
+    response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+    return response
 
 # Database and authentication setup
 # Prefer DATABASE_URL/SQLALCHEMY_DATABASE_URI from environment for portability
@@ -681,10 +698,7 @@ def api_auth_me():
 def api_auth_login():
     if request.method == 'OPTIONS':
         response = jsonify({'status': 'ok'})
-        response.headers['Access-Control-Allow-Origin'] = 'https://asdp-frontend.vercel.app'
-        response.headers['Access-Control-Allow-Credentials'] = 'true'
-        response.headers['Access-Control-Allow-Methods'] = 'POST, OPTIONS'
-        response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+        response = set_cors_headers(response)
         return response
     
     data = request.get_json()
@@ -717,10 +731,7 @@ def api_auth_login():
 def api_auth_register():
     if request.method == 'OPTIONS':
         response = jsonify({'status': 'ok'})
-        response.headers['Access-Control-Allow-Origin'] = 'https://asdp-frontend.vercel.app'
-        response.headers['Access-Control-Allow-Credentials'] = 'true'
-        response.headers['Access-Control-Allow-Methods'] = 'POST, OPTIONS'
-        response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+        response = set_cors_headers(response)
         return response
     
     data = request.get_json()
@@ -1194,10 +1205,7 @@ def admin_update_role(user_id: int):
 def upload_file():
     if request.method == 'OPTIONS':
         response = jsonify({'status': 'ok'})
-        response.headers['Access-Control-Allow-Origin'] = 'https://asdp-frontend.vercel.app'
-        response.headers['Access-Control-Allow-Credentials'] = 'true'
-        response.headers['Access-Control-Allow-Methods'] = 'POST, OPTIONS'
-        response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+        response = set_cors_headers(response)
         return response
     
     if 'file' not in request.files:
@@ -1260,10 +1268,7 @@ def upload_file():
 def clean_data():
     if request.method == 'OPTIONS':
         response = jsonify({'status': 'ok'})
-        response.headers['Access-Control-Allow-Origin'] = 'https://asdp-frontend.vercel.app'
-        response.headers['Access-Control-Allow-Credentials'] = 'true'
-        response.headers['Access-Control-Allow-Methods'] = 'POST, OPTIONS'
-        response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+        response = set_cors_headers(response)
         return response
     
     data = request.json
@@ -1338,10 +1343,7 @@ def clean_data():
 def generate_report():
     if request.method == 'OPTIONS':
         response = jsonify({'status': 'ok'})
-        response.headers['Access-Control-Allow-Origin'] = 'https://asdp-frontend.vercel.app'
-        response.headers['Access-Control-Allow-Credentials'] = 'true'
-        response.headers['Access-Control-Allow-Methods'] = 'POST, OPTIONS'
-        response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+        response = set_cors_headers(response)
         return response
     
     data = request.json
@@ -1386,10 +1388,7 @@ def generate_report():
             )
             
             # Add CORS headers for PDF download
-            response.headers['Access-Control-Allow-Origin'] = 'https://asdp-frontend.vercel.app'
-            response.headers['Access-Control-Allow-Credentials'] = 'true'
-            response.headers['Access-Control-Allow-Methods'] = 'POST, OPTIONS'
-            response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+            response = set_cors_headers(response)
             
             return response
         else:
@@ -1418,10 +1417,7 @@ def generate_report():
 def download_processed_data():
     if request.method == 'OPTIONS':
         response = jsonify({'status': 'ok'})
-        response.headers['Access-Control-Allow-Origin'] = 'https://asdp-frontend.vercel.app'
-        response.headers['Access-Control-Allow-Credentials'] = 'true'
-        response.headers['Access-Control-Allow-Methods'] = 'POST, OPTIONS'
-        response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+        response = set_cors_headers(response)
         return response
     
     try:
@@ -1454,10 +1450,7 @@ def download_processed_data():
         )
         
         # Add CORS headers for CSV download
-        response.headers['Access-Control-Allow-Origin'] = 'https://asdp-frontend.vercel.app'
-        response.headers['Access-Control-Allow-Credentials'] = 'true'
-        response.headers['Access-Control-Allow-Methods'] = 'POST, OPTIONS'
-        response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+        response = set_cors_headers(response)
         
         return response
     

@@ -15,9 +15,9 @@ services:
         value: sqlite:///app.db
       - key: MAX_CONTENT_LENGTH
         value: "16777216"
-      - key: FLASK_ENV
-        value: production
-    healthCheckPath: /health
+      - key: CORS_ORIGINS
+        value: "https://asdp-frontend.vercel.app,http://localhost:5173,http://127.0.0.1:5173"
+    healthCheckPath: /
     buildCommand: echo "Using Dockerfile"
     startCommand: gunicorn -w 2 -k gthread -b 0.0.0.0:$PORT --timeout 120 app:app
 
